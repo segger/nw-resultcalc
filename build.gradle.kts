@@ -11,6 +11,8 @@ repositories {
 }
 dependencies {
     testImplementation(kotlin("test-junit"))
+    implementation("org.apache.poi:poi-ooxml:3.9")
+
 }
 tasks.withType<KotlinCompile>() {
     kotlinOptions.jvmTarget = "1.8"
