@@ -5,9 +5,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.*
 
-class Main {
+class ResultCalc {
 
-    data class Result(val nbr: Int, val points: Int, val time: Int, val errors: Int, val sse: Boolean)
+    data class Result(val nbr: Int, val points: Int, val time: Int, val errors: Int, val sse: Int)
+    data class TournamentResult(val result: Result, val tp: Int)
 
     val participants = mutableMapOf<Int, Pair<String,String>>()
     val searchOne = mutableListOf<Result>()
@@ -16,10 +17,11 @@ class Main {
     val searchFour = mutableListOf<Result>()
 
     val searchNames = mutableListOf<String>()
-    val COLUMNS = arrayOf("#","Förare","Hund","Poäng","Fel","Tid","SSE")
+    val COLUMNS = arrayOf("#","Förare","Hund","Poäng","Fel","Tid","SSE","TP")
 
     private fun generateResult(nbr: Int, pointsIn: String, errorsIn: String, timeIn: String, sseIn: String): Result {
         val points = if (pointsIn.isNotEmpty()) pointsIn.toInt() else 0
+        val errors = if (errorsIn.isNotEmpty()) errorsIn.toInt() else 0
         val time = if (timeIn.isNotEmpty()) {
             val timePart1 = timeIn.split(":")
             val minutes = timePart1[0].toInt()
@@ -32,10 +34,36 @@ class Main {
         } else {
             0
         }
-        val errors = if (errorsIn.isNotEmpty()) errorsIn.toInt() else 0
-        val sse = sseIn.isNotEmpty()
+
+        val sse = if (sseIn.isNotEmpty()) 1 else 0
 
         return Result(nbr, points, time, errors, sse)
+    }
+
+    private fun calcTotalResult(resultList: List<List<TournamentResult>>): List<TournamentResult> {
+        val results = mutableMapOf<Int, TournamentResult>()
+
+        resultList.forEach { searchList ->
+            searchList.forEach { res ->
+                val nbr = res.result.nbr
+                val curr = results[nbr]
+                val newResult = if (curr == null) {
+                    res
+                } else {
+                    val resCopy = res.result.copy(
+                            points = curr.result.points + res.result.points,
+                            errors = curr.result.errors + res.result.errors,
+                            time = curr.result.time + res.result.time,
+                            sse = curr.result.sse + res.result.sse
+                    )
+                    res.copy(result = resCopy, tp = curr.tp + res.tp)
+                }
+                results[nbr] = newResult
+            }
+        }
+
+        val comparator = compareByDescending<TournamentResult> { it.result.points }.thenBy { it.result.errors }.thenBy { it.result.time }
+        return results.values.sortedWith(comparator)
     }
 
     fun loadData(lines: List<String>): Boolean {
@@ -64,25 +92,44 @@ class Main {
         return true
     }
 
-    fun calcResult() {
+    fun calcResultAndPrint(out: String) {
         val workbook = XSSFWorkbook()
 
-        printResult(workbook, searchOne, searchNames[0])
-        printResult(workbook, searchTwo, searchNames[1])
-        printResult(workbook, searchThree, searchNames[2])
-        printResult(workbook, searchFour, searchNames[3])
+        val resultOne = calcResult(searchOne)
+        val resultTwo = calcResult(searchTwo)
+        val resultThree = calcResult(searchThree)
+        val resultFour = calcResult(searchFour)
+        val resultTotal = calcTotalResult(listOf(resultOne, resultTwo, resultThree, resultFour))
 
-        val fileName = "result.xlsx"
+        printResult(workbook, resultOne, searchNames[0])
+        printResult(workbook, resultTwo, searchNames[1])
+        printResult(workbook, resultThree, searchNames[2])
+        printResult(workbook, resultFour, searchNames[3])
+        printResult(workbook, resultTotal, "Totalen")
+
+        val fileName = "${out}.xlsx"
         println("Write result to: ${fileName}")
         val fileOut = FileOutputStream(fileName)
         workbook.write(fileOut)
         fileOut.close()
+
+        val tournamentFile = "${out}.csv"
+        printTournamentResult(tournamentFile, listOf(resultOne, resultTwo, resultThree, resultFour))
     }
 
-    fun printResult(workbook: XSSFWorkbook, searchList: List<Result>, name: String) {
+    fun calcResult(searchList: List<Result>): List<TournamentResult> {
         val comparator = compareByDescending<Result> { it.points }.thenBy { it.errors }.thenBy { it.time }
         val searchResult = searchList.sortedWith(comparator)
 
+        val tournamentResult = mutableListOf<TournamentResult>()
+        searchResult.forEachIndexed { idx, result ->
+            val tp = getTournamentPointsNW1(idx, result)
+            tournamentResult.add(TournamentResult(result, tp))
+        }
+        return tournamentResult
+    }
+
+    fun printResult(workbook: XSSFWorkbook, searchList: List<TournamentResult>, name: String) {
         val createHelper = workbook.getCreationHelper()
         val sheet = workbook.createSheet(name)
 
@@ -105,7 +152,8 @@ class Main {
         timeCellStyle.setDataFormat(createHelper.createDataFormat().getFormat("mm:ss.00"))
 
         var rowIdx = 1
-        searchResult.forEachIndexed { idx, result ->
+        searchList.forEachIndexed { idx, tournamentResult ->
+            val result = tournamentResult.result
             val row = sheet.createRow(rowIdx++)
             row.createCell(0).setCellValue((idx+1).toDouble())
             row.createCell(1).setCellValue("${participants[result.nbr]?.first}")
@@ -123,10 +171,54 @@ class Main {
             timeCell.setCellValue(Date(result.time.toLong()))
 
             val sseCell = row.createCell(6)
-            if (result.sse) {
-                sseCell.setCellValue("x")
+            sseCell.cellStyle = nbrCellStyle
+            sseCell.setCellValue(result.sse.toDouble())
+
+            val tournamentCell = row.createCell(7)
+            // if NW1
+            tournamentCell.setCellValue(tournamentResult.tp.toDouble())
+        }
+    }
+
+    fun printTournamentResult(tournamentFile: String, resultList: List<List<TournamentResult>>) {
+        val results = mutableMapOf<Int, MutableList<TournamentResult>>()
+
+        resultList.forEach { searchList ->
+            searchList.forEach { res ->
+                val nbr = res.result.nbr
+                val newResult = results[nbr] ?: mutableListOf()
+                newResult.add(res)
+                results[nbr] = newResult
             }
         }
+
+        println("Write tournament result to: ${tournamentFile}")
+        val tournamentOut = File(tournamentFile)
+        val buffer = StringBuffer()
+        results.keys.forEach {
+            buffer.append("${participants[it]?.first},")
+            buffer.append("${participants[it]?.second},")
+            results[it]?.forEach {
+                buffer.append("${it.tp},")
+            }
+            buffer.append("\n")
+        }
+        tournamentOut.writeText(buffer.toString())
+    }
+
+    private fun getTournamentPointsNW1(idx: Int, result: Result): Int {
+        var tp = 3
+        if (result.points > 0) {
+            tp += 7;
+        }
+        val placement = idx + 1
+        if (placement in 1..5) {
+            tp += 6 - placement
+        }
+        if (result.sse == 1) {
+            tp += 5
+        }
+        return tp
     }
 
     companion object {
@@ -136,10 +228,10 @@ class Main {
 
             val lines: List<String> = File(fileName).readLines()
 
-            val main = Main()
+            val main = ResultCalc()
             val loaded = main.loadData(lines)
             if (loaded) {
-                main.calcResult()
+                main.calcResultAndPrint(args[1])
             }
         }
     }
