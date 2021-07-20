@@ -7,12 +7,12 @@ import java.util.*
 
 class TournamentCalc {
 
-    val points = mutableMapOf<Int, List<Int>>()
+    val points = mutableMapOf<Int, List<Double>>()
     val participants = mutableMapOf<Int, Pair<String,String>>()
 
     val COLUMNS = arrayOf("#","Förare","Hund","TP (max)")
 
-    data class MaxTournamentResult(val placement: Int, val participant: Int, val maxPoints: Int)
+    data class MaxTournamentResult(val placement: Int, val participant: Int, val maxPoints: Double)
 
     fun loadData(lines: List<String>): Boolean {
         lines.forEach { line ->
@@ -21,11 +21,11 @@ class TournamentCalc {
 
             val hash = "${cells[0]}${cells[1]}".hashCode()
             participants[hash] = Pair(cells[0], cells[1])
-            val pointsList = mutableListOf<Int>()
+            val pointsList = mutableListOf<Double>()
             cells.forEachIndexed { idx, cell ->
                 if (idx > 1) {
                     if (cell.isNotEmpty()) {
-                        pointsList.add(cell.toInt())
+                        pointsList.add(cell.toDouble())
                     }
                 }
             }
@@ -49,7 +49,7 @@ class TournamentCalc {
     }
 
     private fun calcMaxTournamentResult(): List<MaxTournamentResult> {
-        val maxPoints = mutableMapOf<Int, Int>()
+        val maxPoints = mutableMapOf<Int, Double>()
         points.forEach {
             val pointList = it.value.sortedDescending()
             val maxPoint = pointList[0] + pointList[1] + pointList[2]
@@ -63,7 +63,7 @@ class TournamentCalc {
     }
 
     private fun calcTournamentTotalResult(): List<MaxTournamentResult> {
-        val totalPoints = mutableMapOf<Int, Int>()
+        val totalPoints = mutableMapOf<Int, Double>()
         points.forEach {
             val pointList = it.value.sortedDescending()
             val totalPoint = pointList.sum()
@@ -110,12 +110,13 @@ class TournamentCalc {
 
     companion object {
         @JvmStatic fun main(args: Array<String>) {
-            val dirName = args[0]
+            val level = args[0]
+            val dirName = args[1]
             println("Loading data from: ${dirName}")
 
             val tournamentCsvFiles = mutableListOf<File>()
             File(dirName).listFiles().forEach {
-                val isCsvFile = it.name.endsWith(".csv")
+                val isCsvFile = it.name.endsWith(".csv") && it.name.startsWith(level)
                 if (isCsvFile) {
                     tournamentCsvFiles.add(it)
                 }
@@ -126,7 +127,7 @@ class TournamentCalc {
                 main.loadData(it.readLines())
             }
 
-            main.calcResult(args[1])
+            main.calcResult(args[2])
         }
     }
 }

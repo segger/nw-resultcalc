@@ -5,10 +5,14 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.*
 
-class ResultCalc {
+class ResultCalc(private val level: Level) {
 
-    data class Result(val nbr: Int, val points: Int, val time: Int, val errors: Int, val sse: Int)
-    data class TournamentResult(val result: Result, val tp: Int)
+    enum class Level {
+        NW1, NW2
+    }
+
+    data class Result(val nbr: Int, val points: Double, val time: Int, val errors: Int, val sse: Int)
+    data class TournamentResult(val result: Result, val tp: Double)
 
     val participants = mutableMapOf<Int, Pair<String,String>>()
     val searchOne = mutableListOf<Result>()
@@ -20,7 +24,7 @@ class ResultCalc {
     val COLUMNS = arrayOf("#","Förare","Hund","Poäng","Fel","Tid","SSE","TP")
 
     private fun generateResult(nbr: Int, pointsIn: String, errorsIn: String, timeIn: String, sseIn: String): Result {
-        val points = if (pointsIn.isNotEmpty()) pointsIn.toInt() else 0
+        val points = if (pointsIn.isNotEmpty()) pointsIn.toDouble() else 0.0
         val errors = if (errorsIn.isNotEmpty()) errorsIn.toInt() else 0
         val time = if (timeIn.isNotEmpty()) {
             val timePart1 = timeIn.split(":")
@@ -81,12 +85,18 @@ class ResultCalc {
                 participants[nbr] = Pair(cells[1], cells[2])
                 val result1 = generateResult(nbr, cells[3], cells[4], cells[5], cells[6])
                 searchOne.add(result1)
-                val result2 = generateResult(nbr, cells[7], cells[8], cells[9], cells[10])
-                searchTwo.add(result2)
-                val result3 = generateResult(nbr, cells[11], cells[12], cells[13], cells[14])
-                searchThree.add(result3)
-                val result4 = generateResult(nbr, cells[15], cells[16], cells[17], cells[18])
-                searchFour.add(result4)
+                if (cells.size > 7) {
+                    val result2 = generateResult(nbr, cells[7], cells[8], cells[9], cells[10])
+                    searchTwo.add(result2)
+                }
+                if (cells.size > 11) {
+                    val result3 = generateResult(nbr, cells[11], cells[12], cells[13], cells[14])
+                    searchThree.add(result3)
+                }
+                if (cells.size > 15) {
+                    val result4 = generateResult(nbr, cells[15], cells[16], cells[17], cells[18])
+                    searchFour.add(result4)
+                }
             }
         }
         return true
@@ -102,9 +112,15 @@ class ResultCalc {
         val resultTotal = calcTotalResult(listOf(resultOne, resultTwo, resultThree, resultFour))
 
         printResult(workbook, resultOne, searchNames[0])
-        printResult(workbook, resultTwo, searchNames[1])
-        printResult(workbook, resultThree, searchNames[2])
-        printResult(workbook, resultFour, searchNames[3])
+        if (resultTwo.isNotEmpty()) {
+            printResult(workbook, resultTwo, searchNames[1])
+        }
+        if (resultThree.isNotEmpty()) {
+            printResult(workbook, resultThree, searchNames[2])
+        }
+        if (resultFour.isNotEmpty()) {
+            printResult(workbook, resultFour, searchNames[3])
+        }
         printResult(workbook, resultTotal, "Totalen")
 
         val fileName = "${out}.xlsx"
@@ -123,7 +139,10 @@ class ResultCalc {
 
         val tournamentResult = mutableListOf<TournamentResult>()
         searchResult.forEachIndexed { idx, result ->
-            val tp = getTournamentPointsNW1(idx, result)
+            val tp = when(level) {
+                Level.NW1 -> getTournamentPointsNW1(idx, result)
+                else -> getTournamentPointsNW2(idx, result)
+            }
             tournamentResult.add(TournamentResult(result, tp))
         }
         return tournamentResult
@@ -147,7 +166,7 @@ class ResultCalc {
         }
 
         val nbrCellStyle = workbook.createCellStyle()
-        nbrCellStyle.setDataFormat(createHelper.createDataFormat().getFormat("#"))
+        nbrCellStyle.setDataFormat(createHelper.createDataFormat().getFormat("#.#"))
         val timeCellStyle = workbook.createCellStyle()
         timeCellStyle.setDataFormat(createHelper.createDataFormat().getFormat("mm:ss.00"))
 
@@ -160,7 +179,7 @@ class ResultCalc {
             row.createCell(2).setCellValue("${participants[result.nbr]?.second}")
             val pointsCell = row.createCell(3)
             pointsCell.cellStyle = nbrCellStyle
-            pointsCell.setCellValue(result.points.toDouble())
+            pointsCell.setCellValue(result.points)
 
             val errorsCell = row.createCell(4)
             errorsCell.cellStyle = nbrCellStyle
@@ -175,8 +194,7 @@ class ResultCalc {
             sseCell.setCellValue(result.sse.toDouble())
 
             val tournamentCell = row.createCell(7)
-            // if NW1
-            tournamentCell.setCellValue(tournamentResult.tp.toDouble())
+            tournamentCell.setCellValue(tournamentResult.tp)
         }
     }
 
@@ -206,17 +224,35 @@ class ResultCalc {
         tournamentOut.writeText(buffer.toString())
     }
 
-    private fun getTournamentPointsNW1(idx: Int, result: Result): Int {
+    private fun getTournamentPointsNW1(idx: Int, result: Result): Double {
         var tp = 3
         if (result.points > 0) {
             tp += 7;
         }
         val placement = idx + 1
-        if (placement in 1..5) {
+        if (result.points > 0 && placement in 1..5) {
             tp += 6 - placement
         }
         if (result.sse == 1) {
             tp += 5
+        }
+        return tp.toDouble()
+    }
+
+    private fun getTournamentPointsNW2(idx: Int, result: Result): Double {
+        var tp = 0.0
+        tp += result.points
+        val maxPoints = result.points == 25.0
+        val placement = idx + 1
+        if (maxPoints && placement in 1..5) {
+            tp += 6 - placement
+        }
+        if (result.sse == 1) {
+            tp += 5
+        }
+        tp -= result.errors
+        if (tp < 3) {
+            return 3.0
         }
         return tp
     }
@@ -228,7 +264,7 @@ class ResultCalc {
 
             val lines: List<String> = File(fileName).readLines()
 
-            val main = ResultCalc()
+            val main = ResultCalc(Level.valueOf(args[2]))
             val loaded = main.loadData(lines)
             if (loaded) {
                 main.calcResultAndPrint(args[1])
