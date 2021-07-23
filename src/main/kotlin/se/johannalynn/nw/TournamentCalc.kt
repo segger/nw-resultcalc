@@ -8,28 +8,48 @@ import java.util.*
 class TournamentCalc {
 
     val points = mutableMapOf<Int, List<Double>>()
+    val totPoints = mutableMapOf<Int, List<Pair<Int, Double>>>()
     val participants = mutableMapOf<Int, Pair<String,String>>()
 
-    val COLUMNS = arrayOf("#","Förare","Hund","TP (max)")
+    val COLUMNS = arrayOf("#","Förare","Hund","TP")
 
     data class MaxTournamentResult(val placement: Int, val participant: Int, val maxPoints: Double)
 
-    fun loadData(lines: List<String>): Boolean {
+    fun loadData(crNbr: Int, lines: List<String>): Boolean {
         lines.forEach { line ->
             val cells = line.split(",")
             // println(cells)
 
             val hash = "${cells[0]}${cells[1]}".hashCode()
             participants[hash] = Pair(cells[0], cells[1])
+
             val pointsList = mutableListOf<Double>()
+            var totPoint = Pair(0, 0.0)
+            val totCellIdx = cells.size - 1
             cells.forEachIndexed { idx, cell ->
-                if (idx > 1) {
+                if (idx in 2 until totCellIdx) {
                     if (cell.isNotEmpty()) {
                         pointsList.add(cell.toDouble())
                     }
+                } else if (idx == totCellIdx) {
+                    totPoint = Pair(crNbr, cell.toDouble())
                 }
             }
-            points[hash] = pointsList
+            if (points[hash] == null) {
+                points[hash] = pointsList
+            } else {
+                points[hash]?.let { pointsList.addAll(it) }
+                points[hash] = pointsList
+            }
+
+            if (totPoints[hash] == null) {
+                totPoints[hash] = listOf(totPoint)
+            } else {
+                val tp = mutableListOf(totPoint)
+                totPoints[hash]?.let { tp.addAll(it) }
+                totPoints[hash] = tp
+            }
+
         }
         return true
     }
@@ -37,9 +57,11 @@ class TournamentCalc {
     fun calcResult(tournamentFile: String) {
         val workbook = XSSFWorkbook()
 
-        val tournamentResult = calcMaxTournamentResult()
+        val tournamentResult = calcTopp3TournamentResult()
+        val tournamentThreeSearch = calcMaxTournamentResult()
         val tournamentTotResult = calcTournamentTotalResult()
-        printResult(workbook, tournamentResult, "Top 3")
+        printResult(workbook, tournamentResult, "Topp 3 CR")
+        printResult(workbook, tournamentThreeSearch, "Topp 3 sök")
         printResult(workbook, tournamentTotResult, "Total")
 
         println("Write result to: ${tournamentFile}")
@@ -59,6 +81,20 @@ class TournamentCalc {
         val sorted = maxPoints.toList().sortedByDescending { (_, v) -> v }
         return sorted.mapIndexed { idx, res ->
             MaxTournamentResult(idx+1, res.first, res.second)
+        }
+    }
+
+    private fun calcTopp3TournamentResult(): List<MaxTournamentResult> {
+        val topp3Points = mutableMapOf<Int, Double>()
+        totPoints.forEach {
+            val tp = it.value.sortedByDescending { it.second }.take(3)
+            val sum = tp.map { it.second }.sum()
+            topp3Points[it.key] = sum
+        }
+
+        val sorted = topp3Points.toList().sortedByDescending { (_, v) -> v }
+        return sorted.mapIndexed { idx, res ->
+            MaxTournamentResult(idx + 1, res.first, res.second)
         }
     }
 
@@ -124,7 +160,9 @@ class TournamentCalc {
 
             val main = TournamentCalc()
             tournamentCsvFiles.forEach {
-                main.loadData(it.readLines())
+                val tmp = it.name.substringBefore(".")
+                val nbr = tmp.substring(tmp.length - 1).toInt()
+                main.loadData(nbr, it.readLines())
             }
 
             main.calcResult(args[2])
