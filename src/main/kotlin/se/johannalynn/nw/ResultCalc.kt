@@ -186,7 +186,7 @@ class ResultCalc(private val level: Level) {
             errorsCell.setCellValue(result.errors.toDouble())
 
             val timeCell = row.createCell(5)
-            // timeCell.cellStyle = timeCellStyle
+            timeCell.cellStyle = timeCellStyle
             timeCell.setCellValue(Date(result.time.toLong()))
 
             val sseCell = row.createCell(6)
