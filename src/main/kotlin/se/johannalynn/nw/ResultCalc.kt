@@ -213,6 +213,14 @@ class ResultCalc(private val level: Level) {
         println("Write tournament result to: ${tournamentFile}")
         val tournamentOut = File(tournamentFile)
         val buffer = StringBuffer()
+        buffer.append("${searchNames[0]},")
+        buffer.append("${searchNames[1]},")
+        buffer.append("${searchNames[2]}")
+        if (level == Level.NW2) {
+            buffer.append("\n")
+        } else {
+            buffer.append(",${searchNames[3]}\n")
+        }
         results.keys.forEach {
             buffer.append("${participants[it]?.first},")
             buffer.append("${participants[it]?.second},")
