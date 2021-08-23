@@ -5,10 +5,14 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.*
 
-class TournamentCalc {
+class TournamentCalc(private val level: Level) {
 
     enum class MOMENT_TYPE {
         INDOOR, OUTDOOR, BOXES, VEHICLES
+    }
+
+    enum class Level {
+        NW1, NW2
     }
 
     val points = mutableMapOf<Int, List<Double>>()
@@ -122,6 +126,7 @@ class TournamentCalc {
     fun calcResult(tournamentFile: String) {
         val workbook = XSSFWorkbook()
 
+        val tournamentThreePartResult = calcMaxThreeTournametResult()
         val tournamentResult = calcTopp3TournamentResult()
         val tournamentThreeSearch = calcMaxTournamentResult()
         val tournamentIndoorResult = calcMomentResult(MOMENT_TYPE.INDOOR)
@@ -129,6 +134,8 @@ class TournamentCalc {
         val tournamentBoxesResult = calcMomentResult(MOMENT_TYPE.BOXES)
         val tournamentVehiclesResult = calcMomentResult(MOMENT_TYPE.VEHICLES)
         val tournamentTotResult = calcTournamentTotalResult()
+        val sheetName = if (level == Level.NW1) "12" else "9"
+        printResult(workbook, tournamentThreePartResult, "Topp $sheetName sök")
         printResult(workbook, tournamentResult, "Topp 3 CR")
         printResult(workbook, tournamentThreeSearch, "Topp 3 sök")
         printResult(workbook, tournamentIndoorResult, "Inomhus")
@@ -141,6 +148,30 @@ class TournamentCalc {
         val fileOut = FileOutputStream(tournamentFile)
         workbook.write(fileOut)
         fileOut.close()
+    }
+
+    private fun take(): Int {
+        if (level == Level.NW1) {
+            return 4*3
+        } else if (level == Level.NW2) {
+            return 3*3
+        }
+        return 4*3
+    }
+
+    private fun calcMaxThreeTournametResult(): List<MaxTournamentResult> {
+        val maxPoints = mutableMapOf<Int, Double>()
+        points.forEach {
+            val pointList = it.value.sortedDescending()
+            val maxPointTakes = pointList.take(take())
+            val maxPoint = maxPointTakes.map { it }.sum()
+            maxPoints[it.key] = maxPoint
+        }
+
+        val sorted = maxPoints.toList().sortedByDescending { (_, v) -> v }
+        return sorted.mapIndexed { idx, res ->
+            MaxTournamentResult(idx+1, res.first, res.second)
+        }
     }
 
     private fun calcMaxTournamentResult(): List<MaxTournamentResult> {
@@ -249,7 +280,7 @@ class TournamentCalc {
                 }
             }
 
-            val main = TournamentCalc()
+            val main = TournamentCalc(Level.valueOf(level))
             tournamentCsvFiles.forEach {
                 val tmp = it.name.substringBefore(".")
                 val nbr = tmp.substring(tmp.length - 1).toInt()
